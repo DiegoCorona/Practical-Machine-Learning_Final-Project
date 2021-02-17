@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learning"
+subtitle: "Final Project"
+author: "Diego Armando Morales Corona"
+date: "16/2/2021"
+output:
+  prettydoc::html_pretty:
+    theme: tactile
+    highlight: github
+  code_folding: hide
+---
+
+```{r, echo=FALSE}
+htmltools::img(src = knitr::image_uri(file.path('/cloud/project/log_course.jpg')), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px;')
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE, 
+  comment = ' '
+)
+```
+
+```{r}
+library(prettydoc)
+library(dplyr)
+library(caret)
+library(randomForest)
+library(e1071)
+library(rpart)
+```
+
+### Introduction.
+
+Using the dataset provided by [_Qualitative Activity Recognition of Weight Lifting Exercises_](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises), I am going to develop a model that can explain and capture the information in the dataset. We have 5 levels (A,B,C,D,E): A means that the exercise were well done, while the others refers to the most common errors at the moment to do that exercise.
+
+I have two dataset (_training and test_), but I just going to use the training set to develop the model, while the test set is going to be used to predict the levels and evaluate the model, but just at the final.
+
+### Developing.
+
+First, I read the data and I realized that the dataset had a lot of features without information (with NA values and values equal to zero), they were columns with useless information for the model.
+
+```{r}
+training <- read.csv('/cloud/project/pml-training.csv', header = T)
+testing <- read.csv('/cloud/project/pml-testing.csv', header = T)
+training <- mutate(training, classe = as.factor(classe))
+###checking NA
+sapply(training, function(x) sum(is.na(x)))
+### delete NA
+col_to_delete <- which(colMeans(is.na(training))>0)
+training[,col_to_delete] <- NULL
+x <- c()
+for(i in 1:length(training[1,])){
+  if(class(training[1, i])== "character"){
+    x[i] <- i
+  }
+}
+x <- x[!is.na(x)]
+training <- training[, -x]
+training <- training[, -c(1, 2,3,4)]####### divide
+```
+
+Dividing the training set into two sets (_train and validation set_), we optain a new dataset to train the model with  52 predictors and the objetive value. The new training set has 13,737 rows while the validation set has 5885 rows. 
+
+```{r}
+set.seed(3636)
+inTrain <- createDataPartition(y=training$classe, p = 0.7, list = FALSE)
+train <- training[inTrain, ] ### train
+validation <- training[-inTrain, ] ### validation 
+
+dim(train); dim(validation)
+```
+
+As first step, I tried with a simple decision tree, with all the predictors:
+
+```{r}
+### Model 1
+set.seed(12345)
+mod_dt <- rpart(classe ~ ., data=train, method="class")
+```
+
+Proving this first fit in the validation set, I got an accuracy equal to 0.7482, this is not bad, but I will try to get a better model.
+
+
+```{r}
+pred <- predict(mod_dt, newdata=validation, type="class")
+confMatDecTree <- confusionMatrix(pred, validation$classe)
+confMatDecTree ### Accuracy : 0.7482 
+```
+
+Later, I decided to check the variability on each predictor, this to delete this features that don't apport information. I realized that the features with pattern 'gyros' in the names of the column had the poorest _percentUnique_ so this variables just change just a little in the entire dataset, so I removed this features. 
+
+```{r}
+nearZeroVar(train, saveMetrics = TRUE)
+```
+
+```{r}
+training_1 <- training
+training_1$gyros_belt_x <- NULL
+training_1$gyros_belt_y <- NULL
+training_1$gyros_belt_z <- NULL
+training_1$gyros_arm_x <- NULL
+training_1$gyros_arm_y <- NULL
+training_1$gyros_arm_z <- NULL
+training_1$gyros_dumbbell_x <- NULL
+training_1$gyros_dumbbell_y <- NULL
+training_1$gyros_dumbbell_z <- NULL
+training_1$gyros_forearm_x <- NULL
+training_1$gyros_forearm_y <- NULL
+training_1$gyros_forearm_z <- NULL
+```
+
+Whit this modifications I got an accuracy = 0.737, not too bad but the performance can be better.
+
+```{r}
+set.seed(3632)
+inTrain <- createDataPartition(y=training_1$classe, p = 0.7, list = FALSE)
+train <- training_1[inTrain, ] ### train
+validation <- training_1[-inTrain, ] ### validacion 
+
+set.seed(999)
+mod_dt_1 <- rpart(classe ~ ., data=train, method="class")
+pred_dt_1 <- predict(mod_dt_1, newdata=validation, type="class")
+cm_dt <- confusionMatrix(table(pred_dt_1, validation$classe))
+cm_dt ### Accuracy : 0.737
+```
+
+As third option, I tried with a SVM model:
+
+```{r}
+set.seed(766)
+svm_fit <- svm(classe~., data = train)
+pred <- predict(svm_fit, newdata=validation, type="class")
+confM <- confusionMatrix(table(pred, validation$classe))
+confM  ### Accuracy : 0.9251 
+```
+
+With this model I got the best accuracy on the validation set, with 0.9251. So this is going to be the model to be used. 
+
+### On the testing set.
+
+As last step, we need to prove this model with data not seen before, the testing set:
+
+```{r}
+test <- testing[, names(training_1)[1:length(names(training_1))-1]]
+predictions <- predict(svm_fit, newdata = test) 
+predictions
+```
+
+### References.
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz6mleov3gV
+
+
